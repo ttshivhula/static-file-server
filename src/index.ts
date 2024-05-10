@@ -12,12 +12,12 @@ app.get("/", (c) => {
   });
 });
 
-app.use("/files/*", serveStatic({ root: "./" }));
+app.use("/files/*", serveStatic({ root: "../" }));
 
 app.get(
   "/files/*",
   serveStatic({
-    root: "./",
+    root: "../",
     rewriteRequestPath: (path) => path.replace(/^\/files/, "/files"),
   })
 );
