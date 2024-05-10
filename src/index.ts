@@ -22,6 +22,7 @@ const startServer = async () => {
 
   // Define the root route
   app.get("/", async (request, reply) => {
+    console.log(request.ip);
     reply.send({
       message: "There is nothing here",
     });
