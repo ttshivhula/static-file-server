@@ -1,39 +1,45 @@
-import { Hono } from "hono";
-import { serve, type HttpBindings } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { cors } from "hono/cors";
+import fastify from "fastify";
+import fastifyCors from "@fastify/cors";
+// Importing the rate-limit plugin
+import fastifyRateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
 
-type Bindings = HttpBindings & {};
+// Define an asynchronous function to set up and start the server
+const startServer = async () => {
+  // Create an instance of Fastify
+  const app = fastify();
 
-const app = new Hono<{ Bindings: Bindings }>();
-
-app.use(
-  "*",
-  cors({
+  // Enable CORS with the same settings as in Hono code
+  app.register(fastifyCors, {
     origin: "*",
-  })
-);
-
-app.get("/", (c) => {
-  return c.json({
-    remoteAddress: c.env.incoming.socket.remoteAddress,
-    message: "There is nothing here",
   });
-});
 
-app.use("/files/*", serveStatic({ root: "../" }));
+  // Register the rate-limit plugin
+  await app.register(fastifyRateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
+  });
 
-app.get(
-  "/files/*",
-  serveStatic({
-    root: "../",
-    rewriteRequestPath: (path) => path.replace(/^\/files/, "/files"),
-  })
-);
+  // Define the root route
+  app.get("/", async (request, reply) => {
+    reply.send({
+      message: "There is nothing here",
+    });
+  });
 
-const port = 8787;
+  // Serve static files from the specified directory
+  app.register(fastifyStatic, {
+    root: "/home/hostinger/ftp/files",
+    prefix: "/files/", // Serve files under "/files/*"
+  });
 
-serve({
-  fetch: app.fetch,
-  port: port,
+  // Start the server on the specified port
+  const port = 8787;
+  await app.listen({ port });
+  console.log(`Server listening on port ${port}`);
+};
+
+// Call the asynchronous function to start the server
+startServer().catch((err) => {
+  console.error("Error starting server:", err);
 });
