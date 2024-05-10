@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import { serve, type HttpBindings } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { cors } from "hono/cors";
 
 type Bindings = HttpBindings & {};
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+app.use("*", cors());
 
 app.get("/", (c) => {
   return c.json({
