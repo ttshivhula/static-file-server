@@ -7,7 +7,10 @@ import fastifyStatic from "@fastify/static";
 // Define an asynchronous function to set up and start the server
 const startServer = async () => {
   // Create an instance of Fastify
-  const app = fastify();
+  const app = fastify({
+    bodyLimit: 1048576 * 200,
+    trustProxy: true,
+  });
 
   // Enable CORS with the same settings as in Hono code
   app.register(fastifyCors, {
