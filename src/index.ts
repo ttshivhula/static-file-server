@@ -19,7 +19,7 @@ const startServer = async () => {
 
   // Register the rate-limit plugin
   await app.register(fastifyRateLimit, {
-    max: 100,
+    max: 10,
     timeWindow: "1 minute",
   });
 
