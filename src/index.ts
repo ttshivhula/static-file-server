@@ -7,11 +7,17 @@ type Bindings = HttpBindings & {};
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.use("*", cors());
+app.use(
+  "*",
+  cors({
+    origin: "*",
+  })
+);
 
 app.get("/", (c) => {
   return c.json({
     remoteAddress: c.env.incoming.socket.remoteAddress,
+    message: "There is nothing here",
   });
 });
 
