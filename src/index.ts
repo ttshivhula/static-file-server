@@ -10,7 +10,7 @@ const startServer = async () => {
   const app = fastify({
     bodyLimit: 1048576 * 200,
     trustProxy: true,
-    logger: true,
+    logger: false,
   });
 
   // Enable CORS with the same settings as in Hono code
@@ -26,7 +26,8 @@ const startServer = async () => {
 
   // Define the root route
   app.get("/", async (request, reply) => {
-    request.log.info(request.ip);
+    // request.log.info(request.ip);
+    console.log(request.ip);
     reply.send({
       message: "There is nothing here",
     });
