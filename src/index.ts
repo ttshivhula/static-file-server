@@ -3,6 +3,8 @@ import fastifyCors from "@fastify/cors";
 // Importing the rate-limit plugin
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
+import fs from "fs";
+import path from "path";
 
 // Define an asynchronous function to set up and start the server
 const startServer = async () => {
@@ -20,8 +22,43 @@ const startServer = async () => {
 
   // Register the rate-limit plugin
   await app.register(fastifyRateLimit, {
-    max: 50,
+    max: 5000,
     timeWindow: "1 minute",
+  });
+
+  app.post("/upload", async (request, reply) => {
+    const { filename, data, pass } = request.body as {
+      filename: string;
+      data: any;
+      pass: string;
+    };
+
+    if (pass !== process.env.PASS) {
+      return reply.code(401).send({ message: "Unauthorized" });
+    }
+
+    if (!filename || !data) {
+      return reply
+        .code(400)
+        .send({ message: "Filename and data are required" });
+    }
+
+    if (!filename.endsWith(".json")) {
+      return reply
+        .code(400)
+        .send({ message: "Filename must have a .json extension" });
+    }
+
+    const filePath = path.join("/home/hostinger/ftp/files/upload", filename);
+
+    try {
+      // Write the JSON data to the specified file
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      reply.send({ message: "File uploaded successfully" });
+    } catch (error) {
+      console.error("Error writing file:", error);
+      reply.code(500).send({ message: "Internal Server Error" });
+    }
   });
 
   // Define the root route
