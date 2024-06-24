@@ -27,13 +27,19 @@ const startServer = async () => {
   });
 
   app.post("/upload", async (request, reply) => {
-    const { filename, data, pass } = request.body as {
+    const {
+      filename,
+      data,
+      pass,
+      isImage = false,
+    } = request.body as {
       filename: string;
       data: any;
       pass: string;
+      isImage: boolean;
     };
 
-    if (pass !== process.env.PASS) {
+    if (pass !== process.env.PASSWORD) {
       return reply.code(401).send({ message: "Unauthorized" });
     }
 
@@ -43,18 +49,28 @@ const startServer = async () => {
         .send({ message: "Filename and data are required" });
     }
 
-    if (!filename.endsWith(".json")) {
-      return reply
-        .code(400)
-        .send({ message: "Filename must have a .json extension" });
-    }
+    // if (!filename.endsWith(".json")) {
+    //   return reply
+    //     .code(400)
+    //     .send({ message: "Filename must have a .json extension" });
+    // }
 
-    const filePath = path.join("/home/hostinger/ftp/files/upload", filename);
+    const filePath = path.join(
+      !isImage
+        ? "/home/hostinger/ftp/files"
+        : "/home/hostinger/ftp/files/images",
+      filename
+    );
 
     try {
       // Write the JSON data to the specified file
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      reply.send({ message: "File uploaded successfully" });
+      reply.send({
+        message: "File uploaded successfully",
+        url: `https://data.banterbubbles.com/files${
+          isImage ? "/images/" : "/"
+        }${filename}`,
+      });
     } catch (error) {
       console.error("Error writing file:", error);
       reply.code(500).send({ message: "Internal Server Error" });
