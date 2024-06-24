@@ -64,7 +64,12 @@ const startServer = async () => {
 
     try {
       // Write the JSON data to the specified file
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      if (isImage) {
+        const bufferData = Buffer.from(data, "base64");
+        fs.writeFileSync(filePath, bufferData);
+      } else {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      }
       reply.send({
         message: "File uploaded successfully",
         url: `https://data.banterbubbles.com/files${
