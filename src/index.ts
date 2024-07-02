@@ -1,10 +1,59 @@
+import axios from "axios";
 import fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 // Importing the rate-limit plugin
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fs from "fs";
+import { getLinkPreview } from "link-preview-js";
 import path from "path";
+import sizeOf from "image-size";
+
+const getImageDimensions = async (url: string) => {
+  try {
+    const response = await axios.get(url, { responseType: "arraybuffer" });
+    const buffer = Buffer.from(response.data);
+    return sizeOf(buffer);
+  } catch (error) {
+    console.error(error);
+    return undefined;
+  }
+};
+
+const generatePreview = async (url: string) => {
+  const response = await getLinkPreview(url, {
+    followRedirects: "follow",
+    headers: {
+      "user-agent":
+        "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)",
+    },
+    timeout: 15000,
+  });
+
+  if (!response) return undefined;
+
+  const { title, description, images } = response as any;
+
+  let dimensions = undefined;
+
+  if (images.length) {
+    const response = await getImageDimensions(images[0]);
+
+    if (response) {
+      dimensions = {
+        width: response.width,
+        height: response.height,
+      };
+    }
+  }
+
+  return {
+    title,
+    description,
+    image: images.length ? images[0] : undefined,
+    imageDimension: dimensions,
+  };
+};
 
 // Define an asynchronous function to set up and start the server
 const startServer = async () => {
@@ -24,6 +73,25 @@ const startServer = async () => {
   await app.register(fastifyRateLimit, {
     max: 5000,
     timeWindow: "1 minute",
+  });
+
+  app.post("/generate-preview", async (request, reply) => {
+    try {
+      const { url } = request.body as {
+        url: string;
+      };
+      if (!url) {
+        return reply.code(400).send({ error: "URL is required" });
+      }
+      const preview = await generatePreview(url);
+      if (!preview) {
+        return reply.code(404).send({ error: "Preview not found" });
+      }
+      reply.send(preview);
+    } catch (err) {
+      console.error(err);
+      return reply.code(500).send({ error: "Internal server error" });
+    }
   });
 
   app.post("/upload", async (request, reply) => {
@@ -48,12 +116,6 @@ const startServer = async () => {
         .code(400)
         .send({ message: "Filename and data are required" });
     }
-
-    // if (!filename.endsWith(".json")) {
-    //   return reply
-    //     .code(400)
-    //     .send({ message: "Filename must have a .json extension" });
-    // }
 
     const filePath = path.join(
       !isImage
