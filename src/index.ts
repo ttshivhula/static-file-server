@@ -107,7 +107,7 @@ const startServer = async () => {
       isImage: boolean;
     };
 
-    if (pass !== process.env.PASSWORD) {
+    if (pass !== process.env.SERVER_PASSWORD) {
       return reply.code(401).send({ message: "Unauthorized" });
     }
 
