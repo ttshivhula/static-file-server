@@ -1,13 +1,36 @@
+import { indexToken, indexUrl, password } from "./constants";
+
+import { Index } from "@upstash/vector"; // replace with actual import
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import axios from "axios";
 import fastify from "fastify";
 import fastifyCors from "@fastify/cors";
-// Importing the rate-limit plugin
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import fs from "fs";
 import { getLinkPreview } from "link-preview-js";
 import path from "path";
 import sizeOf from "image-size";
+
+const semanticSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 25,
+  separators: [" "],
+  chunkOverlap: 8,
+});
+
+const WHITELIST = ["black", "swear"];
+const PROFANITY_THRESHOLD = 0.86;
+
+function splitTextIntoWords(text: string): string[] {
+  return text.split(/\s/);
+}
+
+async function splitTextIntoSemantics(text: string): Promise<string[]> {
+  if (text.split(/\s/).length === 1) return []; // no semantics for single words
+  const documents = await semanticSplitter.createDocuments([text]);
+  const chunks = documents.map((chunk) => chunk.pageContent);
+  return chunks;
+}
 
 const getImageDimensions = async (url: string) => {
   try {
@@ -55,31 +78,125 @@ const generatePreview = async (url: string) => {
   };
 };
 
-// Define an asynchronous function to set up and start the server
 const startServer = async () => {
-  // Create an instance of Fastify
   const app = fastify({
-    bodyLimit: 1048576 * 200,
+    bodyLimit: 1048576 * 200, // 200 MB
     trustProxy: true,
     logger: false,
   });
 
-  // Enable CORS with the same settings as in Hono code
   app.register(fastifyCors, {
     origin: "*",
   });
 
-  // Register the rate-limit plugin
   await app.register(fastifyRateLimit, {
     max: 5000,
     timeWindow: "1 minute",
   });
 
+  app.post("/profanity", async (request, reply) => {
+    try {
+      const index = new Index({
+        url: indexUrl,
+        token: indexToken,
+      });
+
+      const body = request.body;
+      let { message, pass } = body as { message: string; pass: string };
+
+      if (pass !== password) {
+        return reply.code(401).send({ message: "Unauthorized" });
+      }
+
+      if (!message) {
+        return reply.code(400).send({ error: "Message is required" });
+      }
+
+      if (message.split(/\s/).length > 35 || message.length > 1000) {
+        return reply.code(413).send({
+          error:
+            "Due to temporary Cloudflare limits, a message can only be up to 35 words or 1000 characters.",
+        });
+      }
+
+      message = message
+        .split(/\s/)
+        .filter((word) => !WHITELIST.includes(word.toLowerCase()))
+        .join(" ");
+
+      const [semanticChunks, wordChunks] = await Promise.all([
+        splitTextIntoSemantics(message),
+        splitTextIntoWords(message),
+      ]);
+
+      const flaggedFor = new Set<{ score: number; text: string }>();
+
+      const vectorRes = await Promise.all([
+        ...wordChunks.map(async (wordChunk) => {
+          const [vector] = await index.query({
+            topK: 1,
+            data: wordChunk,
+            includeMetadata: true,
+          });
+
+          if (vector && vector.score > 0.95) {
+            flaggedFor.add({
+              text: vector.metadata!.text as string,
+              score: vector.score,
+            });
+          }
+
+          return { score: 0 };
+        }),
+        ...semanticChunks.map(async (semanticChunk) => {
+          const [vector] = await index.query({
+            topK: 1,
+            data: semanticChunk,
+            includeMetadata: true,
+          });
+
+          if (vector && vector.score > PROFANITY_THRESHOLD) {
+            flaggedFor.add({
+              text: vector.metadata!.text as string,
+              score: vector.score,
+            });
+          }
+
+          return vector!;
+        }),
+      ]);
+
+      if (flaggedFor.size > 0) {
+        const sorted = Array.from(flaggedFor).sort((a, b) =>
+          a.score > b.score ? -1 : 1
+        )[0];
+        return reply.send({
+          isProfanity: true,
+          score: sorted?.score,
+          flaggedFor: sorted?.text,
+        });
+      } else {
+        const mostProfaneChunk = vectorRes.sort((a, b) =>
+          a.score > b.score ? -1 : 1
+        )[0]!;
+
+        return reply.send({
+          isProfanity: false,
+          score: mostProfaneChunk.score,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+
+      return reply
+        .code(500)
+        .send({ error: "Something went wrong.", err: JSON.stringify(err) });
+    }
+  });
+
   app.post("/generate-preview", async (request, reply) => {
     try {
-      const { url } = request.body as {
-        url: string;
-      };
+      const { url } = request.body as { url: string };
       if (!url) {
         return reply.code(400).send({ error: "URL is required" });
       }
@@ -107,7 +224,7 @@ const startServer = async () => {
       isImage: boolean;
     };
 
-    if (pass !== process.env.SERVER_PASSWORD) {
+    if (pass !== password) {
       return reply.code(401).send({ message: "Unauthorized" });
     }
 
@@ -125,7 +242,6 @@ const startServer = async () => {
     );
 
     try {
-      // Write the JSON data to the specified file
       if (isImage) {
         const bufferData = Buffer.from(data, "base64");
         fs.writeFileSync(filePath, bufferData);
@@ -144,28 +260,23 @@ const startServer = async () => {
     }
   });
 
-  // Define the root route
   app.get("/", async (request, reply) => {
-    // request.log.info(request.ip);
     console.log(request.ip);
     reply.send({
       message: "There is nothing here",
     });
   });
 
-  // Serve static files from the specified directory
   app.register(fastifyStatic, {
     root: "/home/hostinger/ftp/files",
-    prefix: "/files/", // Serve files under "/files/*"
+    prefix: "/files/",
   });
 
-  // Start the server on the specified port
   const port = 8787;
   await app.listen({ port });
   console.log(`Server listening on port ${port}`);
 };
 
-// Call the asynchronous function to start the server
 startServer().catch((err) => {
   console.error("Error starting server:", err);
 });
